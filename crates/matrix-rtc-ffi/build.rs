@@ -65,6 +65,10 @@ fn emit_android_build_id() {
     }
 
     println!("cargo:rustc-link-arg-cdylib=-Wl,--build-id=sha1");
+    // InterCom: a soname, as Android libraries have. Without one the linker names the base
+    // version definition (there is one, because of the JNI version script) after its output
+    // file, with the full path of the build machine.
+    println!("cargo:rustc-link-arg-cdylib=-Wl,-soname,libmatrix_rtc_ffi.so");
 }
 
 /// Re-emit libwebrtc's JNI link args against the cdylib being built.

@@ -9,11 +9,14 @@
 
 Branch `intercom`, based on the upstream tag `v0.5.0`. Nothing is published to a Maven repository:
 `scripts/build-intercom-android.sh` builds the media variant for arm64-v8a and puts
-`io.element.android:matrix-rtc-android:0.5.0-intercom.1` into `~/.m2`, where InterCom's fork of element-call-android
+`io.element.android:matrix-rtc-android:0.5.0-intercom.2` into `~/.m2`, where InterCom's fork of element-call-android
 resolves it. It needs rustup with the `aarch64-linux-android` target, `cargo-ndk`, the Android NDK and a JDK.
 
 What differs from `v0.5.0`:
 
+- `0.5.0-intercom.2`: the Android library names no directory of the machine it was built on (source paths are
+  mapped to `/intercom-matrix-rust-rtc`, `/cargo` and `/rustup`), and it has a soname, `libmatrix_rtc_ffi.so`. The
+  build script checks it. No change to the code that runs.
 - **The encoding of an audio publication can be chosen.** `PublishOptions` gains `audio_encoding`
   (`AudioEncodingOptions`: a bitrate cap, stereo, DTX, RED), and `FfiPublishOptions` an optional `audio_encoding`
   (`FfiAudioEncoding`; `audioEncoding` in Kotlin). Left out, a track is published exactly as before, with livekit's
