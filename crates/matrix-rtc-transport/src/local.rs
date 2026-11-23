@@ -72,6 +72,54 @@ pub struct VideoEncodingLimits {
     pub max_framerate: Option<u32>,
 }
 
+/// How an audio publication is encoded (InterCom).
+///
+/// The default is what the transport does when nothing is said: a speech
+/// encoding, one channel, silence not sent (DTX) and redundancy (RED) where
+/// the transport allows it. Music wants the opposite of each.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct AudioEncodingOptions {
+    /// Cap on the encoder's bitrate; `None` leaves the transport's default.
+    pub max_bitrate_bps: Option<u64>,
+    /// Encode two channels. Needs a source of two channels to be worth it.
+    pub stereo: bool,
+    /// Stop sending during silence (discontinuous transmission).
+    pub dtx: bool,
+    /// Send redundant copies of recent frames against packet loss.
+    pub red: bool,
+}
+
+impl Default for AudioEncodingOptions {
+    fn default() -> Self {
+        Self {
+            max_bitrate_bps: None,
+            stereo: false,
+            dtx: true,
+            red: true,
+        }
+    }
+}
+
+impl AudioEncodingOptions {
+    /// What [`AudioEncodingOptions::music`] accepts as a bitrate, in bit/s.
+    pub const MUSIC_BITRATE_RANGE: std::ops::RangeInclusive<u64> = 128_000..=192_000;
+
+    /// Stereo music: the bitrate clamped to [`Self::MUSIC_BITRATE_RANGE`], no
+    /// DTX (it cuts quiet passages and reverb tails) and no RED (which at
+    /// these rates doubles the traffic).
+    pub fn music(max_bitrate_bps: u64) -> Self {
+        Self {
+            max_bitrate_bps: Some(max_bitrate_bps.clamp(
+                *Self::MUSIC_BITRATE_RANGE.start(),
+                *Self::MUSIC_BITRATE_RANGE.end(),
+            )),
+            stereo: true,
+            dtx: false,
+            red: false,
+        }
+    }
+}
+
 /// What to publish.
 #[derive(Clone, Debug)]
 pub struct PublishOptions {
@@ -98,6 +146,8 @@ pub struct PublishOptions {
     pub video_codec: VideoCodecPreference,
     /// Encoder caps, for video kinds; see [`VideoEncodingLimits`].
     pub video_encoding: VideoEncodingLimits,
+    /// Encoder settings, for audio kinds; see [`AudioEncodingOptions`].
+    pub audio_encoding: AudioEncodingOptions,
 }
 
 impl PublishOptions {
@@ -111,6 +161,7 @@ impl PublishOptions {
             muted: false,
             video_codec: VideoCodecPreference::Auto,
             video_encoding: VideoEncodingLimits::default(),
+            audio_encoding: AudioEncodingOptions::default(),
         }
     }
 
@@ -124,6 +175,7 @@ impl PublishOptions {
             muted: false,
             video_codec: VideoCodecPreference::Auto,
             video_encoding: VideoEncodingLimits::default(),
+            audio_encoding: AudioEncodingOptions::default(),
         }
     }
 
@@ -137,6 +189,7 @@ impl PublishOptions {
             muted: false,
             video_codec: VideoCodecPreference::Auto,
             video_encoding: VideoEncodingLimits::default(),
+            audio_encoding: AudioEncodingOptions::default(),
         }
     }
 
@@ -155,6 +208,12 @@ impl PublishOptions {
     /// Cap the encoder; see [`VideoEncodingLimits`].
     pub fn with_video_encoding(mut self, limits: VideoEncodingLimits) -> Self {
         self.video_encoding = limits;
+        self
+    }
+
+    /// Encode the audio as given; see [`AudioEncodingOptions`].
+    pub fn with_audio_encoding(mut self, encoding: AudioEncodingOptions) -> Self {
+        self.audio_encoding = encoding;
         self
     }
 }

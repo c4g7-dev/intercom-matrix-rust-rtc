@@ -52,7 +52,8 @@ pub use keys::{
     ParticipantKey, SwitchCompleteListener,
 };
 pub use local::{
-    AudioSourceConfig, LocalTrackHandle, PublishOptions, VideoCodecPreference, VideoEncodingLimits,
+    AudioEncodingOptions, AudioSourceConfig, LocalTrackHandle, PublishOptions,
+    VideoCodecPreference, VideoEncodingLimits,
     VideoSourceConfig,
 };
 pub use stats::{QualityLimitation, ReceiveStats, SendLayerStats, SendStats};

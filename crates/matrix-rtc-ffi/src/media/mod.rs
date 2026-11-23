@@ -57,7 +57,8 @@ pub use types::{
     FfiFrameEncryptionState, FfiInterruptions, FfiKeyRejection, FfiMediaConstraints,
     FfiParticipant, FfiPublishOptions, FfiQualityLimit, FfiQualityLimitation, FfiReceiveStats,
     FfiSendLayerStats, FfiSendStats, FfiStreamKind, FfiStreamState, FfiVideoCodecPreference,
-    FfiVideoDetail, FfiVideoEncodingLimits, FfiVideoSourceConfig, supported_video_codecs,
+    FfiAudioEncoding, FfiVideoDetail, FfiVideoEncodingLimits, FfiVideoSourceConfig,
+    supported_video_codecs,
 };
 
 /// Errors produced by the media layer of the FFI.

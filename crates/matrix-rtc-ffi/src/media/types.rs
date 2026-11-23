@@ -1013,6 +1013,32 @@ impl From<FfiVideoEncodingLimits> for matrix_rtc_transport::VideoEncodingLimits 
     }
 }
 
+/// How an audio publication is encoded (mirrors
+/// `matrix_rtc_transport::AudioEncodingOptions`; InterCom).
+#[derive(Clone, Copy, Debug, uniffi::Record)]
+pub struct FfiAudioEncoding {
+    /// Cap on the encoder's bitrate, in bit/s; `null` for the transport's
+    /// default.
+    pub max_bitrate_bps: Option<u64>,
+    /// Encode two channels; the source should have two.
+    pub stereo: bool,
+    /// Stop sending during silence.
+    pub dtx: bool,
+    /// Send redundant copies of recent frames.
+    pub red: bool,
+}
+
+impl From<FfiAudioEncoding> for matrix_rtc_transport::AudioEncodingOptions {
+    fn from(encoding: FfiAudioEncoding) -> Self {
+        Self {
+            max_bitrate_bps: encoding.max_bitrate_bps,
+            stereo: encoding.stereo,
+            dtx: encoding.dtx,
+            red: encoding.red,
+        }
+    }
+}
+
 /// What to publish (mirrors `matrix_rtc_transport::PublishOptions`).
 #[derive(Clone, Debug, uniffi::Record)]
 pub struct FfiPublishOptions {
@@ -1030,6 +1056,10 @@ pub struct FfiPublishOptions {
     /// Encoder caps (video only).
     #[uniffi(default = None)]
     pub video_encoding: Option<FfiVideoEncodingLimits>,
+    /// Encoder settings (audio only); `null` for the transport's defaults
+    /// (InterCom).
+    #[uniffi(default = None)]
+    pub audio_encoding: Option<FfiAudioEncoding>,
 }
 
 impl From<FfiPublishOptions> for matrix_rtc_transport::PublishOptions {
@@ -1052,6 +1082,10 @@ impl From<FfiPublishOptions> for matrix_rtc_transport::PublishOptions {
             muted: options.muted,
             video_codec: options.video_codec.into(),
             video_encoding: options.video_encoding.unwrap_or_default().into(),
+            audio_encoding: options
+                .audio_encoding
+                .map(Into::into)
+                .unwrap_or_default(),
         }
     }
 }

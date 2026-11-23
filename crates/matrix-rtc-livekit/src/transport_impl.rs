@@ -50,6 +50,7 @@ use matrix_rtc_transport::livekit::TokenServiceError;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
 use tokio::sync::watch;
 
+use crate::audio_encoding::audio_publish_options;
 use matrix_rtc_core::MatrixBackend;
 use matrix_rtc_core::{IdentitySubject, JoinedMembership, RtcIdentityMapper, RtcTransport};
 use matrix_rtc_transport::{
@@ -70,6 +71,18 @@ use crate::{
 /// boundary, matching what the recording helpers in [`crate::media`] use.
 const AUDIO_SAMPLE_RATE: i32 = 48_000;
 const AUDIO_CHANNELS: i32 = 1;
+/// InterCom: a screen share's audio is music as often as not, and is handed
+/// over in two channels. A share that was sent mono arrives as the same
+/// channel twice.
+const SCREEN_SHARE_AUDIO_CHANNELS: i32 = 2;
+
+/// How many channels a remote audio stream of `kind` is delivered in.
+fn receive_channels(kind: MediaStreamKind) -> i32 {
+    match kind {
+        MediaStreamKind::ScreenShareAudio => SCREEN_SHARE_AUDIO_CHANNELS,
+        _ => AUDIO_CHANNELS,
+    }
+}
 
 /// The MSC4195 LiveKit backend of [`MediaTransport`].
 ///
@@ -676,12 +689,18 @@ impl TransportConnection for LiveKitTransportConnection {
         let source = match kind {
             MediaStreamKind::Microphone | MediaStreamKind::ScreenShareAudio => {
                 let config = options.audio.unwrap_or_default();
-                LocalSource::Audio(NativeAudioSource::new(
-                    AudioSourceOptions::default(),
-                    config.sample_rate,
-                    config.num_channels,
-                    1000,
-                ))
+                LocalSource::Audio {
+                    source: NativeAudioSource::new(
+                        AudioSourceOptions::default(),
+                        config.sample_rate,
+                        config.num_channels,
+                        1000,
+                    ),
+                    options: audio_publish_options(
+                        livekit_track_source(kind),
+                        options.audio_encoding,
+                    ),
+                }
             }
             MediaStreamKind::Camera | MediaStreamKind::ScreenShare => {
                 let config = options.video.ok_or_else(|| {
@@ -864,7 +883,11 @@ fn close_room(session: Arc<LiveKitSession>) {
 /// The native source behind a local publication, which outlives every room
 /// it is published on.
 enum LocalSource {
-    Audio(NativeAudioSource),
+    Audio {
+        source: NativeAudioSource,
+        /// Fixed at publish, as for video (InterCom: the audio encoding).
+        options: TrackPublishOptions,
+    },
     Video {
         source: NativeVideoSource,
         /// Fixed at publish, so every later room encodes the same way.
@@ -908,9 +931,8 @@ impl LiveKitLocalTrack {
     /// with a live unmuted track at the SFU — a hot mic.
     async fn publish_on(&self, session: &Arc<LiveKitSession>) -> Result<(), TransportError> {
         let muted = self.muted.load(Ordering::Acquire);
-        let source_kind = livekit_track_source(self.kind);
         let (track, options) = match &self.source {
-            LocalSource::Audio(source) => {
+            LocalSource::Audio { source, options } => {
                 let track = LocalAudioTrack::create_audio_track(
                     "audio",
                     RtcAudioSource::Native(source.clone()),
@@ -918,13 +940,7 @@ impl LiveKitLocalTrack {
                 if muted {
                     track.mute();
                 }
-                (
-                    LocalTrack::Audio(track),
-                    TrackPublishOptions {
-                        source: source_kind,
-                        ..Default::default()
-                    },
-                )
+                (LocalTrack::Audio(track), options.clone())
             }
             LocalSource::Video { source, options } => {
                 let track = LocalVideoTrack::create_video_track(
@@ -1026,7 +1042,7 @@ impl LocalTrackHandle for LiveKitLocalTrack {
                 "this publication was unpublished".into(),
             ));
         }
-        let LocalSource::Audio(source) = &self.source else {
+        let LocalSource::Audio { source, .. } = &self.source else {
             return Err(TransportError::Unsupported(
                 "this publication does not accept audio frames".into(),
             ));
@@ -1367,7 +1383,11 @@ impl RemoteTrackHandle for LiveKitRemoteTrack {
         let RemoteTrack::Audio(track) = &self.track else {
             return None;
         };
-        let stream = NativeAudioStream::new(track.rtc_track(), AUDIO_SAMPLE_RATE, AUDIO_CHANNELS);
+        let stream = NativeAudioStream::new(
+            track.rtc_track(),
+            AUDIO_SAMPLE_RATE,
+            receive_channels(self.kind),
+        );
         Some(
             stream
                 .map(|frame| AudioFrame {

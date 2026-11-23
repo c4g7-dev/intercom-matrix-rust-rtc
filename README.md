@@ -1,3 +1,41 @@
+> [!IMPORTANT]
+> **This is the InterCom fork of matrix-rust-rtc**, the RTC core of
+> [InterCom for Android](https://github.com/c4g7-dev/InterCom#android). It is not an Element product and is not
+> affiliated with, endorsed by or supported by Element. Please report problems with this fork at
+> <https://github.com/c4g7-dev/InterCom/issues>, not upstream. Below the "InterCom changes" section is the upstream
+> README, kept for reference.
+
+## InterCom changes
+
+Branch `intercom`, based on the upstream tag `v0.5.0`. Nothing is published to a Maven repository:
+`scripts/build-intercom-android.sh` builds the media variant for arm64-v8a and puts
+`io.element.android:matrix-rtc-android:0.5.0-intercom.1` into `~/.m2`, where InterCom's fork of element-call-android
+resolves it. It needs rustup with the `aarch64-linux-android` target, `cargo-ndk`, the Android NDK and a JDK.
+
+What differs from `v0.5.0`:
+
+- **The encoding of an audio publication can be chosen.** `PublishOptions` gains `audio_encoding`
+  (`AudioEncodingOptions`: a bitrate cap, stereo, DTX, RED), and `FfiPublishOptions` an optional `audio_encoding`
+  (`FfiAudioEncoding`; `audioEncoding` in Kotlin). Left out, a track is published exactly as before, with livekit's
+  defaults: 48 kbit/s, one channel, DTX and RED on. InterCom asks for stereo at 160 kbit/s without DTX or RED for the
+  audio of a screen share, and for nothing on the microphone. `crates/matrix-rtc-livekit/src/audio_encoding.rs` says
+  what each field does on the way to the Opus encoder.
+- **The `livekit` crate is a patched copy**, `vendor/livekit` (0.9.7), because the published one cannot announce a
+  stereo track and decodes a received stereo track to mono. The patch is `vendor/livekit-0.9.7-intercom.patch`;
+  `vendor/README.md` explains it.
+- **A received screen share's audio is delivered in two channels** (`ScreenShareAudio`); every other audio stream in
+  one, as before.
+- For every call, whatever is published: the answer to the SFU's offer repeats `stereo=1` on the audio sections
+  where the offer has it. An answer to an offer without a stereo section is not touched.
+
+The Kotlin bindings are generated from the build, so they carry the new record; the library's exported symbols are
+those of 0.5.0 plus that record's metadata. Not built here: iOS, the web binding, and the other Android ABIs.
+
+Tests: `cargo test -p matrix-rtc-transport -p matrix-rtc-livekit --lib`, `cargo test -p matrix-rtc-ffi --features
+media --lib`, and the patch's own as `vendor/README.md` says. None of it has been run against an SFU.
+
+---
+
 # matrix-rust-rtc
 
 [![License: AGPL-3.0 OR Element Commercial](https://img.shields.io/badge/License-AGPL_3.0_OR_Element_Commercial-blue.svg)](LICENSE)
