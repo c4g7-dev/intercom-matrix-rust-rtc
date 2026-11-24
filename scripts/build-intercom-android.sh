@@ -21,7 +21,7 @@ set -euo pipefail
 # target, cargo-ndk, the Android NDK (ANDROID_NDK_HOME or ANDROID_HOME/ndk)
 # and a JDK.
 
-INTERCOM_VERSION="0.5.0-intercom.3"
+INTERCOM_VERSION="0.5.0-intercom.4"
 VERSION="${1:-$INTERCOM_VERSION}"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

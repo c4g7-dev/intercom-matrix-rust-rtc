@@ -68,27 +68,60 @@ pub fn choose(
         JoinTransport::ReceiveOnly => Ok(TransportIntent::ReceiveOnly {
             can_subscribe: vec![transport_type.to_owned()],
         }),
-        JoinTransport::Advertised => rtc_transports
-            .as_array()
-            .into_iter()
-            .flatten()
-            .filter_map(|entry| serde_json::from_value::<RawRtcTransport>(entry.clone()).ok())
-            .filter(|entry| entry.transport_type == transport_type)
-            // In room-state, published as advertised: whether it names an SFU
-            // `url`, the legacy `livekit_service_url`, or both decides how
-            // every client gets its token for it, and so the identity peers
-            // expect us under. In MSC, by its `url` alone.
-            .find_map(|entry| match entry.into_typed_in(format) {
-                RtcTransport::LiveKit(livekit) => {
-                    Some(TransportIntent::Publish(RtcTransport::LiveKit(livekit)))
-                }
-                RtcTransport::Unsupported(_) => None,
-            })
-            // Final: the homeserver's configuration, not a failure to reach it
-            // (R18).
-            .ok_or_else(|| JoinError::NoLiveKitTransport {
-                transport_type: transport_type.to_owned(),
-            }),
+        JoinTransport::Advertised => {
+            let candidates: Vec<LiveKitTransport> = rtc_transports
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter_map(|entry| {
+                    serde_json::from_value::<RawRtcTransport>(entry.clone()).ok()
+                })
+                .filter(|entry| entry.transport_type == transport_type)
+                // In room-state, published as advertised: whether it names an SFU
+                // `url`, the legacy `livekit_service_url`, or both decides how
+                // every client gets its token for it, and so the identity peers
+                // expect us under. In MSC, by its `url` alone.
+                .filter_map(|entry| match entry.into_typed_in(format) {
+                    RtcTransport::LiveKit(livekit) => Some(livekit),
+                    RtcTransport::Unsupported(_) => None,
+                })
+                .collect();
+            prefer_for(format, candidates)
+                .map(|livekit| TransportIntent::Publish(RtcTransport::LiveKit(livekit)))
+                // Final: the homeserver's configuration, not a failure to reach it
+                // (R18).
+                .ok_or_else(|| JoinError::NoLiveKitTransport {
+                    transport_type: transport_type.to_owned(),
+                })
+        }
+    }
+}
+
+/// InterCom: which of the advertised transports of the format's type a join
+/// publishes on. MSC takes the first, in the homeserver's order.
+///
+/// Room-state takes the first that names a `livekit_service_url`, and the
+/// first at all only when none does. That generation's Element Call gets
+/// every token at a JWT service's `/sfu/get`, so a focus without one is a
+/// focus its peers cannot subscribe to; and the homeserver's MSC4195
+/// `get_token`, the only other way to a token, is one hosts may lack (the
+/// Rust SDK's bindings do: such a join was given up the moment its media
+/// connected). A homeserver may list an SFU `url` alone first, as Synapse
+/// does with `m.livekit` in `matrix_rtc.transports`, and a host whose SDK
+/// does not keep the two types apart hands that entry over as `livekit`.
+fn prefer_for(
+    format: MembershipFormat,
+    candidates: Vec<LiveKitTransport>,
+) -> Option<LiveKitTransport> {
+    match format {
+        MembershipFormat::Msc => candidates.into_iter().next(),
+        MembershipFormat::RoomState => {
+            let with_service = candidates
+                .iter()
+                .position(|livekit| livekit.livekit_service_url().is_some());
+            let index = with_service.unwrap_or(0);
+            candidates.into_iter().nth(index)
+        }
     }
 }
 
@@ -298,6 +331,53 @@ mod tests {
 
         let msc = advertised_in(&both("m.livekit"), MembershipFormat::Msc).unwrap();
         assert_eq!(msc, LiveKitTransport::sfu("wss://sfu.example.org"));
+    }
+
+    /// InterCom: Synapse's `matrix_rtc.transports` as the Rust SDK hands it
+    /// over, an `m.livekit` SFU `url` first, typed `livekit` like the legacy
+    /// entry after it. Room-state publishes on the legacy entry, whose token
+    /// comes from `/sfu/get`, rather than on the one needing MSC4195
+    /// `get_token`.
+    #[test]
+    fn room_state_prefers_a_transport_with_a_jwt_service() {
+        let transports = json!([
+            { "type": "livekit", "url": "wss://sfu.example.org" },
+            {
+                "type": "livekit",
+                "livekit_service_url": "https://jwt.example.org",
+                "url": "wss://sfu.example.org",
+            },
+        ]);
+        let chosen = advertised_in(&transports, MembershipFormat::RoomState).unwrap();
+        assert_eq!(
+            chosen.livekit_service_url(),
+            Some("https://jwt.example.org")
+        );
+        assert!(matches!(
+            chosen.auth_flow(),
+            matrix_rtc_core::LiveKitAuthFlow::SfuGet { .. }
+        ));
+
+        // With no JWT service anywhere, the SFU `url` is still taken: a host
+        // with `get_token` connects, one without says so.
+        let url_only = json!([{ "type": "livekit", "url": "wss://sfu.example.org" }]);
+        let chosen = advertised_in(&url_only, MembershipFormat::RoomState).unwrap();
+        assert_eq!(chosen.livekit_service_url(), None);
+        assert_eq!(chosen.url(), Some("wss://sfu.example.org"));
+
+        // MSC keeps the homeserver's order.
+        let msc = json!([
+            { "type": "m.livekit", "url": "wss://first.example.org" },
+            {
+                "type": "m.livekit",
+                "url": "wss://second.example.org",
+                "livekit_service_url": "https://jwt.example.org",
+            },
+        ]);
+        assert_eq!(
+            advertised_in(&msc, MembershipFormat::Msc),
+            Some(LiveKitTransport::sfu("wss://first.example.org"))
+        );
     }
 
     #[test]

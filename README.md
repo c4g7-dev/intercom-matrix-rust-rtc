@@ -9,11 +9,18 @@
 
 Branch `intercom`, based on the upstream tag `v0.5.0`. Nothing is published to a Maven repository:
 `scripts/build-intercom-android.sh` builds the media variant for arm64-v8a and puts
-`io.element.android:matrix-rtc-android:0.5.0-intercom.3` into `~/.m2`, where InterCom's fork of element-call-android
+`io.element.android:matrix-rtc-android:0.5.0-intercom.4` into `~/.m2`, where InterCom's fork of element-call-android
 resolves it. It needs rustup with the `aarch64-linux-android` target, `cargo-ndk`, the Android NDK and a JDK.
 
 What differs from `v0.5.0`:
 
+- `0.5.0-intercom.4`: **a room-state join publishes on a transport with a JWT service.** Of the homeserver's
+  advertised `livekit` transports, the first that names a `livekit_service_url` is taken, and the first at all only
+  when none does (MSC keeps the homeserver's order). Synapse lists `m.livekit` with an SFU `url` alone first in
+  `matrix_rtc.transports`, and the Rust SDK's bindings hand both entries over as `livekit`, so the join took the
+  SFU `url`, whose token only MSC4195 `get_token` gives; the bindings have no `get_token`, and every native call
+  was given up the moment its media connected. The legacy entry's token comes from `/sfu/get`, as Element Call
+  web's does, and it is the focus that generation's peers can subscribe to.
 - `0.5.0-intercom.3`: **a DM call whose own media connection is given up says so.** The leave that a lost
   connection issues ends the DM lifecycle as `Left` before the loss is reported, and that `Left` was taken as the
   call's end: a DM call whose token or SFU connection failed ended as `Left`, which the call screen closes without a
