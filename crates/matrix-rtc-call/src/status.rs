@@ -199,8 +199,20 @@ impl Inputs {
     }
 
     /// Only a DM call has a direct part to update.
+    ///
+    /// InterCom: a lifecycle ended as [`DirectCallEnd::Left`] is not an end of
+    /// its own. It only mirrors a participation that ended some other way —
+    /// a host leave, a closed slot, our media given up — and every one of
+    /// those reports its end itself. Taken as the call's end, it raced the
+    /// real one: a lost connection issues its leave before it reports the
+    /// loss, and the leave ends the lifecycle, so a DM call whose media
+    /// failed ended as `Left` and closed without a word instead of saying
+    /// that the connection was lost.
     fn set_direct(&mut self, state: DirectCallState) {
         if let DirectCallState::Ended { reason } = &state {
+            if *reason == DirectCallEnd::Left {
+                return;
+            }
             self.end((*reason).into());
         }
         if let Some(direct) = &mut self.direct {
@@ -461,6 +473,48 @@ mod tests {
             cell.status(),
             CallStatus::Ended {
                 reason: CallEnd::Declined
+            }
+        );
+    }
+
+    /// A DM call's media given up while it rings: the leave that follows
+    /// ends the lifecycle as `Left` before the loss is reported, and the loss
+    /// is still what the call says ended it.
+    #[test]
+    fn a_dm_call_whose_media_is_lost_says_so_although_its_leave_came_first() {
+        let (cell, media) = cell(Some(DirectCallState::Ringing {
+            sent_at_ms: 1_000,
+            lifetime_ms: 90_000,
+        }));
+        cell.on_direct(&DirectCallState::Ended {
+            reason: DirectCallEnd::Left,
+        });
+        assert!(matches!(cell.status(), CallStatus::Calling { .. }));
+        cell.connection_closed(ConnectionLossReason::Refused, "token refused".to_owned());
+        assert_eq!(
+            cell.status(),
+            CallStatus::Ended {
+                reason: CallEnd::ConnectionClosed {
+                    reason: ConnectionLossReason::Refused,
+                    message: "token refused".to_owned()
+                }
+            }
+        );
+    }
+
+    /// A host leave of a DM call still ends it as `Left`, through the
+    /// session's end rather than the lifecycle's.
+    #[test]
+    fn a_host_leave_of_a_dm_call_ends_it_as_left() {
+        let (cell, _) = cell(Some(DirectCallState::InCall { since_ms: 1_000 }));
+        cell.on_direct(&DirectCallState::Ended {
+            reason: DirectCallEnd::Left,
+        });
+        cell.on_session_ended(&LeaveReason::new(LeaveCode::Leave));
+        assert_eq!(
+            cell.status(),
+            CallStatus::Ended {
+                reason: CallEnd::Left
             }
         );
     }

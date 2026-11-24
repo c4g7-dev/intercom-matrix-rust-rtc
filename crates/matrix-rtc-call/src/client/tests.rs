@@ -1040,6 +1040,53 @@ async fn a_sticky_decline_reaches_the_call_through_the_feeder() {
     );
 }
 
+/// InterCom: a DM call whose own media is given up while it rings says that
+/// the connection was lost. The leave the loss issues ends the DM lifecycle
+/// first, and that used to end the call as `Left`, which a host closes
+/// without a word.
+#[tokio::test]
+async fn a_ringing_dm_call_whose_media_is_lost_ends_as_connection_closed() {
+    let mock = mock();
+    let client = RtcClient::new(mock.clone());
+    let room = open(&client, &mock, ROOM).await;
+    let sink = mock.room_subscription(ROOM).unwrap().sink.clone();
+    // Bob is in the room, not in the call: there is somebody to ring.
+    sink.on_sticky_events(Vec::new());
+    settle().await;
+
+    let call = room
+        .join_call(CallJoinOptions::new().kind(CallKind::Direct {
+            ring: Some(crate::RingConfig::default()),
+        }))
+        .await
+        .expect("the join succeeds");
+    status_once(&call, |status| {
+        matches!(
+            status,
+            CallStatus::Calling {
+                ring: RingPhase::Ringing { .. },
+                ..
+            }
+        )
+    })
+    .await;
+
+    call.media_status_reporter()
+        .lost(crate::ConnectionLossReason::Refused, "the SFU refused us");
+
+    let status = status_once(&call, |status| matches!(status, CallStatus::Ended { .. })).await;
+    assert_eq!(
+        status,
+        CallStatus::Ended {
+            reason: CallEnd::ConnectionClosed {
+                reason: crate::ConnectionLossReason::Refused,
+                message: "the SFU refused us".to_owned(),
+            }
+        }
+    );
+    assert!(!call.is_live());
+}
+
 /// A group call waits for nobody: it connects with our media, and ends when
 /// we leave.
 #[tokio::test]

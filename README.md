@@ -9,11 +9,17 @@
 
 Branch `intercom`, based on the upstream tag `v0.5.0`. Nothing is published to a Maven repository:
 `scripts/build-intercom-android.sh` builds the media variant for arm64-v8a and puts
-`io.element.android:matrix-rtc-android:0.5.0-intercom.2` into `~/.m2`, where InterCom's fork of element-call-android
+`io.element.android:matrix-rtc-android:0.5.0-intercom.3` into `~/.m2`, where InterCom's fork of element-call-android
 resolves it. It needs rustup with the `aarch64-linux-android` target, `cargo-ndk`, the Android NDK and a JDK.
 
 What differs from `v0.5.0`:
 
+- `0.5.0-intercom.3`: **a DM call whose own media connection is given up says so.** The leave that a lost
+  connection issues ends the DM lifecycle as `Left` before the loss is reported, and that `Left` was taken as the
+  call's end: a DM call whose token or SFU connection failed ended as `Left`, which the call screen closes without a
+  word, typically half a second after it opened, with the ringback just started. `Left` from the DM lifecycle no
+  longer ends the call's status (every way a participation ends reports its own end), so the call ends as
+  `ConnectionClosed` with its reason, and the call screen says the connection was lost and why.
 - `0.5.0-intercom.2`: the Android library names no directory of the machine it was built on (source paths are
   mapped to `/intercom-matrix-rust-rtc`, `/cargo` and `/rustup`), and it has a soname, `libmatrix_rtc_ffi.so`. The
   build script checks it. No change to the code that runs.
