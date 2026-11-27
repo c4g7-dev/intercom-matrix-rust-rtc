@@ -949,8 +949,12 @@ impl<B: MatrixBackend + 'static> CallRoomState<DialectBackend<B>> {
                 self.notify_session_started(&notify.into(), &rtc, &joined.member_event_id)
                     .await;
             }
-            CallKind::Direct { ring } => {
-                self.join_direct(&rtc, &user_id, ring, &mut joined).await;
+            CallKind::Direct {
+                ring,
+                stay_when_alone,
+            } => {
+                self.join_direct(&rtc, &user_id, ring, stay_when_alone, &mut joined)
+                    .await;
             }
         }
         Ok(joined)
@@ -994,6 +998,7 @@ impl<B: MatrixBackend + 'static> CallRoomState<DialectBackend<B>> {
         rtc: &JoinSessionParams,
         user_id: &str,
         ring: Option<crate::RingConfig>,
+        stay_when_alone: bool,
         joined: &mut CallJoined,
     ) {
         let tag = format!("{}/{}", self.room_id(), rtc.slot_id);
@@ -1063,6 +1068,7 @@ impl<B: MatrixBackend + 'static> CallRoomState<DialectBackend<B>> {
             &members,
             initial,
             joined.status.clone(),
+            stay_when_alone,
         );
         self.with_state(&rtc.slot_id, |state| state.direct = Some(direct.clone()));
         joined.direct = Some(direct);
@@ -1190,7 +1196,7 @@ impl<T: MatrixBackend + 'static> ApplicationIntake<T> for CallRoomState<T> {
 fn requested_by(kind: &CallKind) -> Option<CallIntent> {
     let stated = match kind {
         CallKind::Group { notify } => notify.as_ref().and_then(|n| n.intent.as_deref()),
-        CallKind::Direct { ring } => ring.as_ref().and_then(|r| r.intent.as_deref()),
+        CallKind::Direct { ring, .. } => ring.as_ref().and_then(|r| r.intent.as_deref()),
     };
     stated.and_then(CallIntent::parse)
 }
@@ -1199,7 +1205,7 @@ fn requested_by(kind: &CallKind) -> Option<CallIntent> {
 fn fill_intent(kind: &mut CallKind, intent: CallIntent) {
     let stated = match kind {
         CallKind::Group { notify } => notify.as_mut().map(|n| &mut n.intent),
-        CallKind::Direct { ring } => ring.as_mut().map(|r| &mut r.intent),
+        CallKind::Direct { ring, .. } => ring.as_mut().map(|r| &mut r.intent),
     };
     if let Some(stated) = stated {
         stated.get_or_insert_with(|| intent.as_str().to_owned());

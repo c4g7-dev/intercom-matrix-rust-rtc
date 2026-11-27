@@ -78,7 +78,14 @@ pub enum FfiCallKind {
     /// A DM call: the library rings, follows the call and ends it (see
     /// `RtcCall::status`). With `ring`, the user chose to call;
     /// without it, they are answering a ring or joining a call in progress.
-    Direct { ring: Option<FfiRingConfig> },
+    ///
+    /// InterCom: with `stay_when_alone`, the others leaving does not end the
+    /// call: it stays connected, alone, until the host leaves it. Without
+    /// it the call ends as `OthersLeft` the moment they are gone, as before.
+    Direct {
+        ring: Option<FfiRingConfig>,
+        stay_when_alone: bool,
+    },
 }
 
 /// A group call's MSC4075 notification, for a join that starts the call.
@@ -133,11 +140,15 @@ impl From<FfiCallKind> for matrix_rtc_call::CallKind {
             FfiCallKind::Group { notify } => matrix_rtc_call::CallKind::Group {
                 notify: notify.map(Into::into),
             },
-            FfiCallKind::Direct { ring } => matrix_rtc_call::CallKind::Direct {
+            FfiCallKind::Direct {
+                ring,
+                stay_when_alone,
+            } => matrix_rtc_call::CallKind::Direct {
                 ring: ring.map(|ring| matrix_rtc_call::RingConfig {
                     lifetime_ms: ring.lifetime_ms,
                     intent: ring.intent,
                 }),
+                stay_when_alone,
             },
         }
     }
@@ -298,8 +309,8 @@ impl FfiJoinSessionParams {
         let kind = match &self.kind {
             FfiCallKind::Group { notify: None } => "group",
             FfiCallKind::Group { notify: Some(_) } => "group+notify",
-            FfiCallKind::Direct { ring: None } => "direct",
-            FfiCallKind::Direct { ring: Some(_) } => "direct+ring",
+            FfiCallKind::Direct { ring: None, .. } => "direct",
+            FfiCallKind::Direct { ring: Some(_), .. } => "direct+ring",
         };
         format!(
             "[slot {}] transport={} keep_alive={:?}ms encryption={} kind={kind}",

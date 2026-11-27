@@ -950,7 +950,10 @@ async fn a_dm_call_leaves_by_itself_when_the_other_person_leaves() {
     let client = RtcClient::new(mock.clone());
     let room = open(&client, &mock, ROOM).await;
     let call = room
-        .join_call(CallJoinOptions::new().kind(CallKind::Direct { ring: None }))
+        .join_call(CallJoinOptions::new().kind(CallKind::Direct {
+            ring: None,
+            stay_when_alone: false,
+        }))
         .await
         .expect("the join succeeds");
     // Bob is here, and our media is not: nobody to wait for.
@@ -995,6 +998,7 @@ async fn a_sticky_decline_reaches_the_call_through_the_feeder() {
     let call = room
         .join_call(CallJoinOptions::new().kind(CallKind::Direct {
             ring: Some(crate::RingConfig::default()),
+            stay_when_alone: false,
         }))
         .await
         .expect("the join succeeds");
@@ -1057,6 +1061,7 @@ async fn a_ringing_dm_call_whose_media_is_lost_ends_as_connection_closed() {
     let call = room
         .join_call(CallJoinOptions::new().kind(CallKind::Direct {
             ring: Some(crate::RingConfig::default()),
+            stay_when_alone: false,
         }))
         .await
         .expect("the join succeeds");

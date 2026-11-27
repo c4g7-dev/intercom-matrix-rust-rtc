@@ -1060,6 +1060,16 @@ async fn dm_in(
     roster: Vec<RawStickyEvent>,
     ring: Option<RingConfig>,
 ) -> (Call, Arc<MockBackend>, CallJoined) {
+    dm_with(format, others, roster, ring, false).await
+}
+
+async fn dm_with(
+    format: MembershipFormat,
+    others: &[&str],
+    roster: Vec<RawStickyEvent>,
+    ring: Option<RingConfig>,
+    stay_when_alone: bool,
+) -> (Call, Arc<MockBackend>, CallJoined) {
     let sender = alice_backend();
     let mut call = encrypted_call_manager(sender.clone()).await;
     call.rtc_mut().set_format(format);
@@ -1076,7 +1086,10 @@ async fn dm_in(
     rtc.membership_id = Some("alice-a".to_owned());
     let joined = call
         .join(CallJoinParams {
-            kind: CallKind::Direct { ring },
+            kind: CallKind::Direct {
+                ring,
+                stay_when_alone,
+            },
             ..rtc.into()
         })
         .await
@@ -1367,6 +1380,26 @@ async fn joining_a_dm_call_nobody_is_in_ends_it() {
     )
     .await;
     assert!(matches!(state(&joined), DirectCallState::InCall { .. }));
+}
+
+/// InterCom: asked to stay, the call outlives the other person's leave and
+/// takes them back; found empty at the join it still ends.
+#[tokio::test(start_paused = true)]
+async fn a_call_asked_to_stay_does_not_end_when_everyone_else_has_left() {
+    let bob = || member_event(BOB, Some("BOBDEV"), BOB_MEMBER, "$bob-member-1");
+    let (mut call, _, joined) =
+        dm_with(MembershipFormat::Msc, &[BOB], vec![bob()], None, true).await;
+    assert!(matches!(state(&joined), DirectCallState::InCall { .. }));
+
+    set_roster(&mut call, Vec::new()).await;
+    assert!(matches!(state(&joined), DirectCallState::InCall { .. }));
+
+    set_roster(&mut call, vec![bob()]).await;
+    assert!(matches!(state(&joined), DirectCallState::InCall { .. }));
+
+    let (_call, _, joined) =
+        dm_with(MembershipFormat::Msc, &[BOB], Vec::new(), None, true).await;
+    assert_eq!(state(&joined), ended(DirectCallEnd::Empty));
 }
 
 #[tokio::test(start_paused = true)]

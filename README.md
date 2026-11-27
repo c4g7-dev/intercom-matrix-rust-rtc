@@ -1,6 +1,7 @@
 > [!IMPORTANT]
-> **This is the InterCom fork of matrix-rust-rtc**, the RTC core of
-> [InterCom for Android](https://github.com/c4g7-dev/InterCom#android). It is not an Element product and is not
+> **This is the Lattice fork of matrix-rust-rtc** (Lattice was called InterCom until November 2026, and the names in
+> the code and of the builds still say so), the RTC core of
+> [Lattice for Android](https://github.com/c4g7-dev/InterCom#android). It is not an Element product and is not
 > affiliated with, endorsed by or supported by Element. Please report problems with this fork at
 > <https://github.com/c4g7-dev/InterCom/issues>, not upstream. Below the "InterCom changes" section is the upstream
 > README, kept for reference.
@@ -9,11 +10,17 @@
 
 Branch `intercom`, based on the upstream tag `v0.5.0`. Nothing is published to a Maven repository:
 `scripts/build-intercom-android.sh` builds the media variant for arm64-v8a and puts
-`io.element.android:matrix-rtc-android:0.5.0-intercom.4` into `~/.m2`, where InterCom's fork of element-call-android
+`io.element.android:matrix-rtc-android:0.5.0-intercom.5` into `~/.m2`, where InterCom's fork of element-call-android
 resolves it. It needs rustup with the `aarch64-linux-android` target, `cargo-ndk`, the Android NDK and a JDK.
 
 What differs from `v0.5.0`:
 
+- `0.5.0-intercom.5`: **a DM call can outlive the other person's leave.** `CallKind::Direct` gains
+  `stay_when_alone` (`FfiCallKind.Direct.stayWhenAlone` in Kotlin, which every caller now states). With it the
+  DM lifecycle does not end as `OthersLeft` when everyone else has left: the call stays in `InCall`, connected and
+  alone, takes the other person back if they return, and ends when the host leaves it. The Android library uses
+  that to count down before it leaves. A call found empty at the join still ends as `Empty`, and without the flag
+  nothing changes.
 - `0.5.0-intercom.4`: **a room-state join publishes on a transport with a JWT service.** Of the homeserver's
   advertised `livekit` transports, the first that names a `livekit_service_url` is taken, and the first at all only
   when none does (MSC keeps the homeserver's order). Synapse lists `m.livekit` with an SFU `url` alone first in

@@ -57,7 +57,15 @@ pub enum CallKind {
     /// A DM call, whose ring and pickup [`crate::CallStatus`] reports. With a
     /// ring, the user chose to call; without one, the call exists and we are
     /// joining it, to answer a ring or because it is in progress.
-    Direct { ring: Option<RingConfig> },
+    ///
+    /// InterCom: with `stay_when_alone`, the call does not end when everyone
+    /// else has left after having been here: it stays in the call, and the
+    /// host decides how long to wait and leaves itself. A call that is found
+    /// empty when it is joined still ends as [`crate::CallEnd::Empty`].
+    Direct {
+        ring: Option<RingConfig>,
+        stay_when_alone: bool,
+    },
 }
 
 impl Default for CallKind {
@@ -202,6 +210,8 @@ struct Machine {
     other_user_seen: bool,
     /// Our ring, once sent: what a decline must relate to.
     ring_event_id: Option<String>,
+    /// InterCom: the others leaving does not end the call; the host does.
+    stay_when_alone: bool,
     /// The callee's declines that arrived before `ring_event_id` was known.
     /// The sync carrying one can beat the response carrying the id.
     held_declines: Vec<RawTimelineEvent>,
@@ -216,6 +226,7 @@ impl DirectCall {
         members: &[JoinedMembership],
         initial: DirectCallState,
         status: Arc<CallStatusCell>,
+        stay_when_alone: bool,
     ) -> Arc<Self> {
         log::info!("[{tag}] direct call with {callee}: {initial:?}");
         let other_user_seen = members.iter().any(|member| member.sender != own_user_id);
@@ -226,6 +237,7 @@ impl DirectCall {
                 callee,
                 clock,
                 other_user_seen,
+                stay_when_alone,
                 ring_event_id: None,
                 held_declines: Vec::new(),
             }),
@@ -279,6 +291,7 @@ impl DirectCall {
                 // alive after the other person hung up (R26).
                 DirectCallState::InCall { .. }
                     if machine.other_user_seen
+                        && !machine.stay_when_alone
                         && members
                             .iter()
                             .all(|member| member.sender == machine.own_user_id) =>
